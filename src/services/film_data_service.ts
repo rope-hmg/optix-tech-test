@@ -1,3 +1,5 @@
+import { optionFromTruthyValue } from "../utilities/option";
+
 export type Company = {
     id: string,
     name: string,
@@ -104,37 +106,29 @@ export class Film_Data_Service {
     }
 
     public getFilmListingsForPage(page: number, rowsPerPage: number): Film_Listing[] {
-        const filmCount = this.filmData.length;
-        const listings = [];
         const startIndex = page * rowsPerPage;
 
-        for (
-            let i = startIndex;
-            i < startIndex + 3 && i < filmCount;
-            i += 1
-        ) {
-            const film = this.filmData[i];
-            let listing = this.cachedFilmListings.get(film);
+        // Ideally this would be done with a for loop to avoid allocating
+        // temporary objects that must be cleaned up by the GC and to make
+        // it more clear what the code is actually doing.
+        return this.filmData
+            .slice(startIndex, startIndex + rowsPerPage)
+            .map((film) => {
+                return optionFromTruthyValue(this.cachedFilmListings.get(film))
+                    .unwrapOrElse(() => {
+                        const listing = this.generateFilmListing(film);
+                        this.cachedFilmListings.set(film, listing);
 
-            if (listing === undefined) {
-                listing = this.generateFilmListing(film);
-                this.cachedFilmListings.set(film, listing);
-            }
-
-            listings.push(listing);
-        }
-
-        return listings;
+                        return listing;
+                    });
+            });
     }
 
     private generateFilmListing(film: Film): Film_Listing {
         const reviewCount = film.reviews.length;
-        let averageReviewValue = 0;
-        let averageReviewScore: string;
 
-        for (let i = 0; i < reviewCount; i += 1) {
-            averageReviewValue += film.reviews[i];
-        }
+        let averageReviewValue = film.reviews.reduce((acc, reviewValue) => acc + reviewValue);
+        let averageReviewScore: string;
 
         if (averageReviewValue > 0 && reviewCount > 0) {
             averageReviewValue /= reviewCount;
@@ -145,21 +139,9 @@ export class Film_Data_Service {
 
         //----------------------------------------------------------
 
-        const companyCount = this.companyData.length;
-        let productionCompany = "Unknown";
-
-        for (
-            let i = 0, stillSearching = true;
-            i < companyCount && stillSearching;
-            i += 1
-        ) {
-            const company = this.companyData[i];
-
-            if (company.id === film.filmCompanyId) {
-                productionCompany = company.name;
-                stillSearching = false;
-            }
-        }
+        const productionCompany = this.companyData
+            .find((company) => company.id === film.filmCompanyId)?.name
+            ?? "Unknown";
 
         //----------------------------------------------------------
 
@@ -171,6 +153,4 @@ export class Film_Data_Service {
             productionCompany,
         };
     }
-
-
 }
